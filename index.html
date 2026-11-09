@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TV Cast</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,Arial,sans-serif;background:#0f1220;color:#fff;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center}
+  .box{padding:24px;max-width:520px;width:100%}
+  h1{margin:0 0 8px}
+  button,.btn{display:block;width:100%;padding:18px;margin:12px 0;border:0;border-radius:14px;background:#4f7cff;color:#fff;font-size:20px;font-weight:600}
+  button.alt{background:#2a3050}
+  input[type=text]{width:100%;padding:16px;font-size:28px;text-align:center;letter-spacing:6px;border-radius:12px;border:2px solid #4f7cff;background:#1a1f38;color:#fff}
+  .code{font-size:72px;font-weight:800;letter-spacing:12px;color:#7fffd4;margin:20px 0}
+  .small{opacity:.7;font-size:14px;line-height:1.5}
+  video{background:#000;width:100%;border-radius:12px;margin-top:12px}
+  #tvVideo{position:fixed;inset:0;width:100%;height:100%;border-radius:0;margin:0;object-fit:contain;display:none}
+  .hide{display:none!important}
+</style>
+</head>
+<body>
+<div class="box" id="home">
+  <h1>📺 TV Cast</h1>
+  <p class="small">Projetez vos vidéos du téléphone sur la TV (même Wi-Fi).</p>
+  <button onclick="startTV()">Je suis sur la TV (récepteur)</button>
+  <button class="alt" onclick="startPhone()">Je suis sur le téléphone (émetteur)</button>
+</div>
+
+<div class="box hide" id="tvBox">
+  <h1>Code de connexion</h1>
+  <div class="code" id="code">······</div>
+  <p class="small" id="tvStatus">Sur le téléphone, choisissez « émetteur » et saisissez ce code.</p>
+</div>
+<video id="tvVideo" autoplay playsinline muted></video>
+
+<div class="box hide" id="phoneBox">
+  <h1>Émetteur</h1>
+  <label class="btn alt" style="margin-top:0">🎬 Choisir une vidéo
+    <input type="file" id="file" accept="video/*" hidden>
+  </label>
+  <video id="pv" controls playsinline></video>
+  <input type="text" id="codeIn" inputmode="numeric" maxlength="6" placeholder="Code TV" style="margin-top:14px">
+  <button id="castBtn">Projeter sur la TV</button>
+  <button class="alt hide" id="stopBtn">Arrêter</button>
+  <p class="small" id="phStatus">Choisissez une vidéo, saisissez le code affiché sur la TV.</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const PREFIX = "tvcast-hot50i-";
+function show(id){["home","tvBox","phoneBox"].forEach(x=>$(x).classList.add("hide"));$(id).classList.remove("hide");}
+
+/* ---------- TV ---------- */
+function startTV(){
+  show("tvBox");
+  const code = String(Math.floor(100000 + Math.random()*900000));
+  $("code").textContent = code;
+  const peer = new Peer(PREFIX + code);
+  peer.on("error", e => { $("tvStatus").textContent = "Erreur : " + e.type + " (rechargez la page)"; });
+  peer.on("call", call => {
+    call.answer();
+    call.on("stream", stream => {
+      const v = $("tvVideo");
+      v.srcObject = stream; v.style.display = "block";
+      v.play().catch(()=>{});
+      $("tvBox").classList.add("hide");
+    });
+    call.on("close", () => { $("tvVideo").style.display="none"; $("tvBox").classList.remove("hide"); $("tvStatus").textContent="Projection terminée. En attente…"; });
+  });
+  // Appuyer sur OK / cliquer pour activer le son
+  const unmute = () => { const v=$("tvVideo"); v.muted=false; v.play().catch(()=>{}); };
+  document.addEventListener("click", unmute);
+  document.addEventListener("keydown", unmute);
+}
+
+/* ---------- Téléphone ---------- */
+let peer, call;
+function startPhone(){ show("phoneBox"); }
+$("file").addEventListener("change", e => {
+  const f = e.target.files[0]; if(!f) return;
+  $("pv").src = URL.createObjectURL(f);
+  $("phStatus").textContent = "Vidéo prête : " + f.name;
+});
+$("castBtn").addEventListener("click", async () => {
+  const v = $("pv"), code = $("codeIn").value.trim();
+  if(!v.src){ $("phStatus").textContent="Choisissez d'abord une vidéo."; return; }
+  if(code.length !== 6){ $("phStatus").textContent="Saisissez le code à 6 chiffres de la TV."; return; }
+  try { await v.play(); } catch(e){}
+  const stream = v.captureStream ? v.captureStream() : v.mozCaptureStream();
+  peer = new Peer();
+  peer.on("error", e => { $("phStatus").textContent = "Erreur : " + e.type; });
+  peer.on("open", () => {
+    call = peer.call(PREFIX + code, stream);
+    $("phStatus").textContent = "Projection en cours… Contrôlez la lecture avec les boutons ci-dessus.";
+    $("stopBtn").classList.remove("hide");
+    call.on("close", () => $("phStatus").textContent = "Connexion terminée.");
+  });
+});
+$("stopBtn").addEventListener("click", () => {
+  if(call) call.close(); if(peer) peer.destroy();
+  $("pv").pause(); $("stopBtn").classList.add("hide");
+  $("phStatus").textContent = "Arrêté.";
+});
+</script>
+</body>
+</html>
