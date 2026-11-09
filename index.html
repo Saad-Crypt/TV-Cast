@@ -7,22 +7,25 @@
 <style>
   *{box-sizing:border-box}
   body{margin:0;font-family:system-ui,Arial,sans-serif;background:#0f1220;color:#fff;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center}
-  .box{padding:24px;max-width:520px;width:100%}
-  h1{margin:0 0 8px}
-  button,.btn{display:block;width:100%;padding:18px;margin:12px 0;border:0;border-radius:14px;background:#4f7cff;color:#fff;font-size:20px;font-weight:600}
-  button.alt{background:#2a3050}
-  input[type=text]{width:100%;padding:16px;font-size:28px;text-align:center;letter-spacing:6px;border-radius:12px;border:2px solid #4f7cff;background:#1a1f38;color:#fff}
+  .box{padding:20px;max-width:520px;width:100%}
+  h1{margin:0 0 8px} h2{font-size:18px;margin:22px 0 6px;text-align:left}
+  button,.btn{display:block;width:100%;padding:16px;margin:10px 0;border:0;border-radius:14px;background:#4f7cff;color:#fff;font-size:19px;font-weight:600}
+  button.alt,.btn.alt{background:#2a3050}
+  .row{display:flex;gap:8px}.row button{margin:6px 0;padding:14px 4px;font-size:16px}
+  input[type=text]{width:100%;padding:14px;font-size:18px;border-radius:12px;border:2px solid #4f7cff;background:#1a1f38;color:#fff}
+  input.big{font-size:28px;text-align:center;letter-spacing:6px}
   .code{font-size:72px;font-weight:800;letter-spacing:12px;color:#7fffd4;margin:20px 0}
   .small{opacity:.7;font-size:14px;line-height:1.5}
-  video{background:#000;width:100%;border-radius:12px;margin-top:12px}
-  #tvVideo{position:fixed;inset:0;width:100%;height:100%;border-radius:0;margin:0;object-fit:contain;display:none}
+  #pv{background:#000;width:100%;border-radius:12px;margin-top:8px}
+  #stage{position:fixed;inset:0;background:#000;display:none}
+  #stage iframe,#stage video{width:100%;height:100%;border:0;object-fit:contain;background:#000}
   .hide{display:none!important}
 </style>
 </head>
 <body>
 <div class="box" id="home">
   <h1>📺 TV Cast</h1>
-  <p class="small">Projetez vos vidéos du téléphone sur la TV (même Wi-Fi).</p>
+  <p class="small">Projetez YouTube, Vimeo, Dailymotion, liens vidéo directs ou vos fichiers sur la TV (même Wi-Fi).</p>
   <button onclick="startTV()">Je suis sur la TV (récepteur)</button>
   <button class="alt" onclick="startPhone()">Je suis sur le téléphone (émetteur)</button>
 </div>
@@ -32,18 +35,27 @@
   <div class="code" id="code">······</div>
   <p class="small" id="tvStatus">Sur le téléphone, choisissez « émetteur » et saisissez ce code.</p>
 </div>
-<video id="tvVideo" autoplay playsinline muted></video>
+<div id="stage"></div>
 
 <div class="box hide" id="phoneBox">
   <h1>Émetteur</h1>
-  <label class="btn alt" style="margin-top:0">🎬 Choisir une vidéo
-    <input type="file" id="file" accept="video/*" hidden>
-  </label>
-  <video id="pv" controls playsinline></video>
-  <input type="text" id="codeIn" inputmode="numeric" maxlength="6" placeholder="Code TV" style="margin-top:14px">
-  <button id="castBtn">Projeter sur la TV</button>
-  <button class="alt hide" id="stopBtn">Arrêter</button>
-  <p class="small" id="phStatus">Choisissez une vidéo, saisissez le code affiché sur la TV.</p>
+  <div id="step1">
+    <input type="text" class="big" id="codeIn" inputmode="numeric" maxlength="6" placeholder="Code TV">
+    <button id="connBtn">Se connecter à la TV</button>
+  </div>
+  <div id="step2" class="hide">
+    <h2>🔗 Lien vidéo</h2>
+    <input type="text" id="urlIn" placeholder="Collez un lien YouTube, Vimeo, .mp4…">
+    <button id="linkBtn">Lire sur la TV</button>
+    <h2>📱 Fichier du téléphone</h2>
+    <label class="btn alt">🎬 Choisir une vidéo<input type="file" id="file" accept="video/*" hidden></label>
+    <video id="pv" controls playsinline class="hide"></video>
+    <button class="alt hide" id="fileBtn">Projeter ce fichier</button>
+    <h2>🎛️ Télécommande</h2>
+    <div class="row"><button class="alt" data-c="back">⏪ 10s</button><button class="alt" data-c="play">▶️</button><button class="alt" data-c="pause">⏸️</button><button class="alt" data-c="fwd">10s ⏩</button></div>
+    <div class="row"><button class="alt" data-c="unmute">🔊 Son</button><button class="alt" data-c="mute">🔇 Muet</button><button class="alt" data-c="stop">⏹️ Stop</button></div>
+  </div>
+  <p class="small" id="phStatus">Saisissez le code affiché sur la TV.</p>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
@@ -52,57 +64,127 @@ const $ = id => document.getElementById(id);
 const PREFIX = "tvcast-hot50i-";
 function show(id){["home","tvBox","phoneBox"].forEach(x=>$(x).classList.add("hide"));$(id).classList.remove("hide");}
 
-/* ---------- TV ---------- */
+/* ================= TV ================= */
+let kind = null, ytTime = 0;
+function stage(){ return $("stage"); }
+function clearStage(){ stage().innerHTML=""; stage().style.display="none"; kind=null; $("tvBox").classList.remove("hide"); }
+function setStage(el){ stage().innerHTML=""; stage().appendChild(el); stage().style.display="block"; $("tvBox").classList.add("hide"); }
+function post(msg){ const f=stage().querySelector("iframe"); if(f) f.contentWindow.postMessage(typeof msg==="string"?msg:JSON.stringify(msg),"*"); }
+
+function loadUrl(url){
+  let m;
+  if((m=url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/))([\w-]{11})/))){
+    kind="yt"; ytTime=0;
+    const f=document.createElement("iframe");
+    f.allow="autoplay; encrypted-media; fullscreen";
+    f.allowFullscreen=true;
+    f.src="https://www.youtube.com/embed/"+m[1]+"?autoplay=1&mute=1&enablejsapi=1&rel=0&playsinline=1&origin="+encodeURIComponent(location.origin);
+    f.onload=()=>post({event:"listening",id:1,channel:"widget"});
+    setStage(f);
+  } else if((m=url.match(/vimeo\.com\/(?:.*\/)?(\d+)/))){
+    kind="vimeo";
+    const f=document.createElement("iframe");
+    f.allow="autoplay; fullscreen"; f.allowFullscreen=true;
+    f.src="https://player.vimeo.com/video/"+m[1]+"?autoplay=1&muted=1";
+    setStage(f);
+  } else if((m=url.match(/dailymotion\.com\/video\/(\w+)/))){
+    kind="dm";
+    const f=document.createElement("iframe");
+    f.allow="autoplay; fullscreen"; f.allowFullscreen=true;
+    f.src="https://www.dailymotion.com/embed/video/"+m[1]+"?autoplay=1&mute=1";
+    setStage(f);
+  } else {
+    kind="video";
+    const v=document.createElement("video");
+    v.src=url; v.autoplay=true; v.muted=true; v.controls=false; v.playsInline=true;
+    v.onerror=()=>{ clearStage(); $("tvStatus").textContent="Ce lien ne peut pas être lu directement."; };
+    setStage(v); v.play().catch(()=>{});
+  }
+}
+function command(c){
+  const v=stage().querySelector("video");
+  if(c==="stop"){ clearStage(); return; }
+  if(kind==="video"||kind==="file"){
+    if(!v) return;
+    if(c==="play") v.play(); if(c==="pause") v.pause();
+    if(c==="mute") v.muted=true; if(c==="unmute"){ v.muted=false; v.play().catch(()=>{}); }
+    if(kind==="video"){ if(c==="fwd") v.currentTime+=10; if(c==="back") v.currentTime-=10; }
+  } else if(kind==="yt"){
+    const fn={play:"playVideo",pause:"pauseVideo",mute:"mute",unmute:"unMute"}[c];
+    if(fn) post({event:"command",func:fn,args:[]});
+    if(c==="fwd") post({event:"command",func:"seekTo",args:[ytTime+10,true]});
+    if(c==="back") post({event:"command",func:"seekTo",args:[Math.max(0,ytTime-10),true]});
+  } else if(kind==="vimeo"){
+    const mm={play:{method:"play"},pause:{method:"pause"},mute:{method:"setVolume",value:0},unmute:{method:"setVolume",value:1}}[c];
+    if(mm) post(mm);
+  } else if(kind==="dm"){
+    const mm={play:"play",pause:"pause",mute:"mute",unmute:"unmute"}[c];
+    if(mm) post({command:mm,parameters:[]});
+  }
+}
+window.addEventListener("message",e=>{
+  if(!/youtube\.com$/.test(new URL(e.origin).hostname)) return;
+  try{ const d=JSON.parse(e.data); if(d.info&&typeof d.info.currentTime==="number") ytTime=d.info.currentTime; }catch(_){}
+});
+
 function startTV(){
   show("tvBox");
-  const code = String(Math.floor(100000 + Math.random()*900000));
-  $("code").textContent = code;
-  const peer = new Peer(PREFIX + code);
-  peer.on("error", e => { $("tvStatus").textContent = "Erreur : " + e.type + " (rechargez la page)"; });
-  peer.on("call", call => {
-    call.answer();
-    call.on("stream", stream => {
-      const v = $("tvVideo");
-      v.srcObject = stream; v.style.display = "block";
-      v.play().catch(()=>{});
-      $("tvBox").classList.add("hide");
-    });
-    call.on("close", () => { $("tvVideo").style.display="none"; $("tvBox").classList.remove("hide"); $("tvStatus").textContent="Projection terminée. En attente…"; });
+  const code=String(Math.floor(100000+Math.random()*900000));
+  $("code").textContent=code;
+  const peer=new Peer(PREFIX+code);
+  peer.on("error",e=>{ $("tvStatus").textContent="Erreur : "+e.type+" (rechargez la page)"; });
+  peer.on("connection",conn=>{
+    $("tvStatus").textContent="Téléphone connecté ✔ En attente d'une vidéo…";
+    conn.on("data",d=>{ if(d.t==="load") loadUrl(d.url); else if(d.t==="cmd") command(d.c); });
   });
-  // Appuyer sur OK / cliquer pour activer le son
-  const unmute = () => { const v=$("tvVideo"); v.muted=false; v.play().catch(()=>{}); };
-  document.addEventListener("click", unmute);
-  document.addEventListener("keydown", unmute);
+  peer.on("call",call=>{
+    call.answer();
+    call.on("stream",s=>{
+      kind="file";
+      const v=document.createElement("video");
+      v.srcObject=s; v.autoplay=true; v.muted=true; v.playsInline=true;
+      setStage(v); v.play().catch(()=>{});
+    });
+    call.on("close",clearStage);
+  });
 }
 
-/* ---------- Téléphone ---------- */
-let peer, call;
+/* ================= TÉLÉPHONE ================= */
+let peer, conn;
 function startPhone(){ show("phoneBox"); }
-$("file").addEventListener("change", e => {
-  const f = e.target.files[0]; if(!f) return;
-  $("pv").src = URL.createObjectURL(f);
-  $("phStatus").textContent = "Vidéo prête : " + f.name;
-});
-$("castBtn").addEventListener("click", async () => {
-  const v = $("pv"), code = $("codeIn").value.trim();
-  if(!v.src){ $("phStatus").textContent="Choisissez d'abord une vidéo."; return; }
-  if(code.length !== 6){ $("phStatus").textContent="Saisissez le code à 6 chiffres de la TV."; return; }
-  try { await v.play(); } catch(e){}
-  const stream = v.captureStream ? v.captureStream() : v.mozCaptureStream();
-  peer = new Peer();
-  peer.on("error", e => { $("phStatus").textContent = "Erreur : " + e.type; });
-  peer.on("open", () => {
-    call = peer.call(PREFIX + code, stream);
-    $("phStatus").textContent = "Projection en cours… Contrôlez la lecture avec les boutons ci-dessus.";
-    $("stopBtn").classList.remove("hide");
-    call.on("close", () => $("phStatus").textContent = "Connexion terminée.");
+function send(m){ if(conn&&conn.open) conn.send(m); }
+function status(t){ $("phStatus").textContent=t; }
+
+$("connBtn").onclick=()=>{
+  const code=$("codeIn").value.trim();
+  if(code.length!==6){ status("Saisissez le code à 6 chiffres de la TV."); return; }
+  status("Connexion…");
+  peer=new Peer();
+  peer.on("error",e=>status("Erreur : "+e.type+" (vérifiez le code)"));
+  peer.on("open",()=>{
+    conn=peer.connect(PREFIX+code,{reliable:true});
+    conn.on("open",()=>{ $("step1").classList.add("hide"); $("step2").classList.remove("hide"); status("Connecté à la TV ✔"); });
+    conn.on("close",()=>status("Connexion perdue."));
   });
-});
-$("stopBtn").addEventListener("click", () => {
-  if(call) call.close(); if(peer) peer.destroy();
-  $("pv").pause(); $("stopBtn").classList.add("hide");
-  $("phStatus").textContent = "Arrêté.";
-});
+};
+$("linkBtn").onclick=()=>{
+  const u=$("urlIn").value.trim();
+  if(!/^https?:\/\//i.test(u)){ status("Collez un lien complet commençant par https://"); return; }
+  send({t:"load",url:u}); status("Lien envoyé. Sur la TV le son démarre coupé : appuyez sur « Son ».");
+};
+$("file").onchange=e=>{
+  const f=e.target.files[0]; if(!f) return;
+  $("pv").src=URL.createObjectURL(f);
+  $("pv").classList.remove("hide"); $("fileBtn").classList.remove("hide");
+};
+$("fileBtn").onclick=async()=>{
+  const v=$("pv");
+  try{ await v.play(); }catch(_){}
+  const s=v.captureStream?v.captureStream():v.mozCaptureStream();
+  peer.call(PREFIX+$("codeIn").value.trim(),s);
+  status("Fichier projeté. Contrôlez la lecture avec le lecteur ci-dessus.");
+};
+document.querySelectorAll("[data-c]").forEach(b=>b.onclick=()=>send({t:"cmd",c:b.dataset.c}));
 </script>
 </body>
 </html>
